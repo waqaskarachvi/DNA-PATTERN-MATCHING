@@ -164,11 +164,12 @@ if mode == "Single Pattern Search":
         elif not pattern_raw.strip():
             st.warning("Enter a pattern to search.")
         else:
-            patterns = [p.strip() for p in pattern_raw.strip().splitlines() if p.strip()]
-            if len(patterns) != 1:
-                st.error("Single Pattern Search mode accepts only ONE pattern. Please enter a single line pattern.")
+            pat = pattern_raw.strip().upper()
+            # Strict validation: only one continuous pattern, no spaces, no tabs, valid chars only
+            if " " in pat or "\t" in pat or "\n" in pat:
+                st.error("Single Pattern Search mode accepts only ONE continuous DNA pattern (no spaces, tabs, or multiple lines).")
             else:
-                pat = "".join([c for c in patterns[0].upper() if c in "ATCG"])
+                pat = "".join([c for c in pat if c in "ATCG"])
                 if not pat:
                     st.error("Pattern contains no valid A/T/C/G characters.")
                 else:
