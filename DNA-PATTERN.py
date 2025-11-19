@@ -5,7 +5,6 @@ import streamlit as st
 import re, time, io
 import pandas as pd
 import matplotlib.pyplot as plt
-from collections import deque, defaultdict
 
 # ==========================
 # PAGE CONFIG
@@ -34,7 +33,6 @@ st.markdown("""
             font-family: monospace; line-height: 1.6;
             word-wrap: break-word;
         }
-        .highlight { color: #FFD60A; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -55,6 +53,7 @@ uploaded_files = st.file_uploader(
 )
 
 sequences = {}
+
 if uploaded_files:
     for uploaded_file in uploaded_files:
         fasta = uploaded_file.getvalue().decode("utf-8")
@@ -65,24 +64,31 @@ if uploaded_files:
         sequences[header] = sequence
         st.success(f"✅ Loaded: {header} ({len(sequence)} bp)")
 else:
-    seq_input = st.text_area("🧬 Enter DNA Sequence", placeholder="ATCGGATCGATCG...", height=120).strip().upper()
+    seq_input = st.text_area(
+        "🧬 Enter DNA Sequence",
+        placeholder="ATCGGATCGATCG...",
+        height=120
+    ).strip().upper()
     if seq_input:
         sequences["Manual Entry"] = re.sub(r'[^ATCG]', '', seq_input)
 
-# ==========================
-# PATTERN INPUT
-# ==========================
-pattern_raw = st.text_area("🔍 Enter Pattern(s) to Search (one per line for multi-pattern)")
-pattern_list = [p.strip().upper() for p in pattern_raw.splitlines() if p.strip()]
+# MULTI-PATTERN INPUT
+pattern_input = st.text_input(
+    "🔍 Enter Pattern(s) (comma-separated for multiple patterns)",
+    placeholder="ATC, GGA, TTA"
+).strip().upper()
 
-mode = "Single" if len(pattern_list) == 1 else "Multi"
+patterns = [p.strip() for p in pattern_input.split(",") if p.strip()]
 
 # ==========================
 # ALGORITHMS
 # ==========================
+
+# --- Naive Search ---
 def naive_search(text, pattern):
     return [i for i in range(len(text)-len(pattern)+1) if text[i:i+len(pattern)] == pattern]
 
+# --- KMP ---
 def kmp_search(text, pattern):
     lps = [0]*len(pattern)
     j = 0
@@ -90,7 +96,9 @@ def kmp_search(text, pattern):
         while j > 0 and pattern[i] != pattern[j]:
             j = lps[j-1]
         if pattern[i] == pattern[j]:
-            j += 1; lps[i] = j
+            j += 1
+            lps[i] = j
+
     res, j = [], 0
     for i in range(len(text)):
         while j > 0 and text[i] != pattern[j]:
@@ -102,13 +110,15 @@ def kmp_search(text, pattern):
             j = lps[j-1]
     return res
 
+# --- Boyer Moore ---
 def boyer_moore_search(text, pattern):
     m, n = len(pattern), len(text)
     bad_char = {pattern[i]: i for i in range(m)}
     res, s = [], 0
+
     while s <= n - m:
         j = m - 1
-        while j >= 0 and pattern[j] == text[s+j]:
+        while j >= 0 and pattern[j] == text[s + j]:
             j -= 1
         if j < 0:
             res.append(s)
@@ -117,158 +127,194 @@ def boyer_moore_search(text, pattern):
             s += max(1, j - bad_char.get(text[s+j], -1))
     return res
 
+# --- Rabin Karp ---
 def rabin_karp(text, pattern, d=256, q=101):
     m, n = len(pattern), len(text)
     p = t = 0
     h = pow(d, m-1) % q
     res = []
+
     for i in range(m):
         p = (d*p + ord(pattern[i])) % q
         t = (d*t + ord(text[i])) % q
-    for s in range(n - m + 1):
+
+    for s in range(n-m+1):
         if p == t and text[s:s+m] == pattern:
             res.append(s)
-        if s < n - m:
+        if s < n-m:
             t = (d*(t - ord(text[s])*h) + ord(text[s+m])) % q
             if t < 0:
                 t += q
+
     return res
 
-# ==========================
-# AHO-CORASICK FOR MULTI-PATTERN
-# ==========================
-class AhoNode:
-    def __init__(self):
-        self.children = {}
-        self.fail = None
-        self.output = []
-
+# --- AHO CORASICK (full implementation) ---
 class AhoCorasick:
     def __init__(self, patterns):
-        self.root = AhoNode()
-        self.build_trie(patterns)
-        self.build_failure_links()
+        self.num_nodes = 1
+        self.edges = [{}]
+        self.fail = [0]
+        self.output = [[]]
 
-    def build_trie(self, patterns):
-        for idx, pat in enumerate(patterns):
-            node = self.root
-            for char in pat:
-                if char not in node.children:
-                    node.children[char] = AhoNode()
-                node = node.children[char]
-            node.output.append(pat)
+        for pattern in patterns:
+            self._add_pattern(pattern)
 
-    def build_failure_links(self):
-        queue = deque()
-        for child in self.root.children.values():
-            child.fail = self.root
-            queue.append(child)
-        while queue:
-            current = queue.popleft()
-            for char, next_node in current.children.items():
-                fail_node = current.fail
-                while fail_node and char not in fail_node.children:
-                    fail_node = fail_node.fail
-                next_node.fail = fail_node.children[char] if fail_node and char in fail_node.children else self.root
-                next_node.output += next_node.fail.output
-                queue.append(next_node)
+        self._build_fail_links()
+
+    def _add_pattern(self, pattern):
+        node = 0
+        for char in pattern:
+            if char not in self.edges[node]:
+                self.edges[node][char] = self.num_nodes
+                self.edges.append({})
+                self.fail.append(0)
+                self.output.append([])
+                self.num_nodes += 1
+            node = self.edges[node][char]
+        self.output[node].append(pattern)
+
+    def _build_fail_links(self):
+        from collections import deque
+        q = deque()
+
+        for char, nxt in self.edges[0].items():
+            q.append(nxt)
+
+        while q:
+            r = q.popleft()
+            for char, nxt in self.edges[r].items():
+                q.append(nxt)
+                f = self.fail[r]
+                while f > 0 and char not in self.edges[f]:
+                    f = self.fail[f]
+                self.fail[nxt] = self.edges[f].get(char, 0)
+                self.output[nxt] += self.output[self.fail[nxt]]
 
     def search(self, text):
-        node = self.root
-        results = defaultdict(list)
+        node = 0
+        results = []  # (pattern, index)
+
         for i, char in enumerate(text):
-            while node and char not in node.children:
-                node = node.fail
-            if not node:
-                node = self.root
-                continue
-            node = node.children[char]
-            for pat in node.output:
-                results[pat].append(i - len(pat) + 1)
+            while node > 0 and char not in self.edges[node]:
+                node = self.fail[node]
+
+            node = self.edges[node].get(char, 0)
+
+            for p in self.output[node]:
+                results.append((p, i - len(p) + 1))
+
         return results
 
-# ==========================
-# SELECT ALGORITHMS
-# ==========================
+def aho_corasick_search(text, patterns):
+    ac = AhoCorasick(patterns)
+    matches = ac.search(text)
+    results = {p: [] for p in patterns}
+    for pat, pos in matches:
+        results[pat].append(pos)
+    return results
+
+
+# Algorithm dictionary
 algo_funcs = {
-    "Naïve Search": naive_search,
-    "KMP": kmp_search,
-    "Boyer–Moore": boyer_moore_search,
-    "Rabin–Karp": rabin_karp,
-    "Aho–Corasick": None  # Handled separately for multi-pattern
+    "Naïve Search": lambda t, pats: {p: naive_search(t, p) for p in pats},
+    "KMP": lambda t, pats: {p: kmp_search(t, p) for p in pats},
+    "Boyer–Moore": lambda t, pats: {p: boyer_moore_search(t, p) for p in pats},
+    "Rabin–Karp": lambda t, pats: {p: rabin_karp(t, p) for p in pats},
+    "Aho–Corasick": lambda t, pats: aho_corasick_search(t, pats)
 }
 
-if mode == "Single":
-    selected_algos = st.multiselect(
-        "⚙️ Select Algorithms (Single Pattern Only)",
-        ["Naïve Search", "KMP", "Boyer–Moore", "Rabin–Karp"],
-        default=["KMP", "Boyer–Moore"]
-    )
-else:
-    selected_algos = ["Aho–Corasick"]
+algorithms = list(algo_funcs.keys())
+
+selected_algos = st.multiselect(
+    "⚙️ Select Algorithms",
+    algorithms,
+    default=["KMP", "Boyer–Moore"]
+)
 
 # ==========================
 # RUN ANALYSIS
 # ==========================
-if st.button("🔍 Search Pattern(s)"):
-    if not sequences or not pattern_list:
-        st.warning("⚠️ Please enter both sequence(s) and pattern(s).")
+if "results_stored" not in st.session_state:
+    st.session_state.results_stored = None
+
+if st.button("🔍 Search Pattern"):
+    if not sequences or not patterns:
+        st.warning("⚠️ Please enter both sequence(s) and at least one pattern.")
     else:
         all_results = []
+
         for header, dna_sequence in sequences.items():
             st.markdown(f"## 🧫 Results for **{header}** ({len(dna_sequence)} bp)")
 
-            if mode == "Single":
-                pattern = pattern_list[0]
-                results = []
-                for algo in selected_algos:
-                    start = time.time()
-                    matches = algo_funcs[algo](dna_sequence, pattern)
-                    elapsed = time.time() - start
-                    results.append({
-                        "Sequence Name": header,
-                        "Algorithm": algo,
-                        "Matches": len(matches),
-                        "Time (s)": round(elapsed, 5),
-                        "Positions": matches
-                    })
+            results = []
+            for algo in selected_algos:
+                start = time.time()
 
-                df = pd.DataFrame(results)
-                all_results.append(df)
+                match_dict = algo_funcs[algo](dna_sequence, patterns)
+                match_count = sum(len(v) for v in match_dict.values())
 
-                st.markdown("### 📊 Algorithm Comparison")
-                st.dataframe(df[["Algorithm","Matches","Time (s)"]])
+                elapsed = round(time.time() - start, 5)
 
-                st.markdown("### 🎨 Sequence Visualization")
-                for algo_row in results:
-                    if algo_row["Matches"]:
-                        highlighted = list(dna_sequence[:400])
-                        for pos in algo_row["Positions"]:
-                            for j in range(len(pattern)):
-                                if pos+j < 400:
-                                    highlighted[pos+j] = f"<span class='highlight'>{highlighted[pos+j]}</span>"
-                        st.markdown(f"**{algo_row['Algorithm']}**:", unsafe_allow_html=True)
-                        st.markdown(f"<div class='result-box'>{''.join(highlighted)}...</div>", unsafe_allow_html=True)
-                    else:
-                        st.warning(f"{algo_row['Algorithm']}: No match found.")
+                results.append({
+                    "Sequence": header,
+                    "Algorithm": algo,
+                    "Patterns": ", ".join(patterns),
+                    "Total Matches": match_count,
+                    "Time (s)": elapsed
+                })
 
-                # Chart
-                fig, ax = plt.subplots()
-                ax.bar(df["Algorithm"], df["Time (s)"], color="#00B4D8")
-                ax.set_ylabel("Execution Time (s)")
-                ax.set_title("Algorithm Performance Comparison")
-                st.pyplot(fig)
+            df = pd.DataFrame(results)
+            all_results.append(df)
 
-            else:  # Multi-pattern: Aho–Corasick
-                aho = AhoCorasick(pattern_list)
-                results = aho.search(dna_sequence)
-                if results:
-                    df = pd.DataFrame(
-                        [(pat,pos) for pat, positions in results.items() for pos in positions],
-                        columns=["Pattern","Position"]
-                    )
-                    st.write(df)
-                    csv = df.to_csv(index=False).encode("utf-8")
-                    st.download_button("📥 Download CSV", csv, "aho_results.csv", "text/csv")
-                else:
-                    st.info("No matches found.")
+            st.markdown("### 📊 Algorithm Comparison")
+            st.dataframe(df, use_container_width=True)
+
+            # Highlight Results
+            st.markdown("### 🎨 Sequence Visualization")
+
+            colors = ["#FFD60A", "#FF6B6B", "#4CC9F0", "#7CFC00", "#FF1493"]
+
+            for algo in selected_algos:
+                match_dict = algo_funcs[algo](dna_sequence, patterns)
+
+                highlighted = list(dna_sequence)
+
+                for idx, pat in enumerate(patterns):
+                    col = colors[idx % len(colors)]
+                    for pos in match_dict[pat]:
+                        for j in range(len(pat)):
+                            if pos + j < len(highlighted):
+                                highlighted[pos + j] = (
+                                    f"<span style='color:{col}; font-weight:bold'>{highlighted[pos + j]}</span>"
+                                )
+
+                st.markdown(f"**{algo}:**", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='result-box'>{''.join(highlighted[:400])}...</div>",
+                    unsafe_allow_html=True
+                )
+
+            # Performance Chart
+            st.markdown("### 📈 Performance Chart")
+            fig, ax = plt.subplots()
+            ax.bar(df["Algorithm"], df["Time (s)"])
+            ax.set_ylabel("Execution Time (s)")
+            ax.set_title("Algorithm Performance Comparison")
+            st.pyplot(fig)
+
+        combined_df = pd.concat(all_results, ignore_index=True)
+        st.session_state.results_stored = combined_df
+        st.success("✅ Analysis complete! CSV ready for download.")
+
+# ==========================
+# DOWNLOAD CSV SECTION
+# ==========================
+if st.session_state.results_stored is not None:
+    csv_buffer = io.StringIO()
+    st.session_state.results_stored.to_csv(csv_buffer, index=False)
+    st.download_button(
+        label="📥 Download Results as CSV",
+        data=csv_buffer.getvalue(),
+        file_name="dna_pattern_results.csv",
+        mime="text/csv"
+    )
