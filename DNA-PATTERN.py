@@ -1,5 +1,5 @@
 # ==========================
-# DNA Pattern Analyzer 🧬 with Step-by-Step Visualization & Rabin-Karp Hash
+# DNA Pattern Analyzer 🧬 with Step-by-Step Visualization
 # ==========================
 import streamlit as st
 import re
@@ -10,7 +10,7 @@ import time
 # ==========================
 st.set_page_config(page_title="DNA Pattern Step Visualizer", page_icon="🧬", layout="wide")
 st.title("🧬 DNA Pattern Analyzer with Step-by-Step Visualization")
-st.write("See how Naive, KMP, Boyer-Moore, and Rabin-Karp scan DNA sequences with rolling hash visualization.")
+st.write("See how Naive, KMP, Boyer-Moore, and Rabin-Karp scan DNA sequences.")
 
 # ==========================
 # INPUT
@@ -37,8 +37,11 @@ if not pattern:
     st.warning("Please enter a pattern.")
     st.stop()
 
-algorithms = st.multiselect("Select Algorithm(s)", ["Naive","KMP","Boyer-Moore","Rabin-Karp"], default=["Naive","KMP"])
-
+algorithms = st.multiselect(
+    "Select Algorithm(s)", 
+    ["Naive","KMP","Boyer-Moore","Rabin-Karp"], 
+    default=["Naive","KMP"]
+)
 if not algorithms:
     st.warning("Select at least one algorithm.")
     st.stop()
@@ -53,7 +56,8 @@ def naive_search_steps(text, pattern):
     for i in range(n-m+1):
         step_text=list(text[:300])
         for j in range(m):
-            step_text[i+j]=f"<span style='background-color:yellow'>{step_text[i+j]}</span>"
+            if i+j < len(step_text):
+                step_text[i+j] = f"<span style='background-color:yellow'>{step_text[i+j]}</span>"
         steps.append("".join(step_text))
         if text[i:i+m]==pattern:
             matches.append(i)
@@ -74,17 +78,18 @@ def kmp_search_steps(text, pattern):
     steps=[]
     matches=[]
     i=j=0
-    while i<len(text):
+    n=len(text)
+    while i<n:
         step_text=list(text[:300])
-        if j<len(pattern):
-            step_text[i]=f"<span style='background-color:yellow'>{step_text[i]}</span>"
+        if i < len(step_text):
+            step_text[i] = f"<span style='background-color:yellow'>{step_text[i]}</span>"
         steps.append("".join(step_text))
         if j<len(pattern) and pattern[j]==text[i]:
             i+=1; j+=1
         if j==len(pattern):
             matches.append(i-j)
             j=lps[j-1]
-        elif i<len(text) and j<len(pattern) and pattern[j]!=text[i]:
+        elif i<n and j<len(pattern) and pattern[j]!=text[i]:
             if j!=0: j=lps[j-1]
             else: i+=1
     return matches, steps, lps
@@ -99,8 +104,8 @@ def boyer_moore_search_steps(text, pattern):
         while j>=0 and text[s+j]==pattern[j]: j-=1
         step_text=list(text[:300])
         for k in range(m):
-            if s+k<len(step_text):
-                step_text[s+k]=f"<span style='background-color:yellow'>{step_text[s+k]}</span>"
+            if s+k < len(step_text):
+                step_text[s+k] = f"<span style='background-color:yellow'>{step_text[s+k]}</span>"
         steps.append("".join(step_text))
         if j<0: matches.append(s); s+=1
         else: s+=max(1,j-bad.get(text[s+j],-1))
@@ -115,8 +120,8 @@ def rabin_karp_search_steps(text, pattern):
     for s in range(n-m+1):
         step_text=list(text[:300])
         for k in range(m):
-            if s+k<len(step_text):
-                step_text[s+k]=f"<span style='background-color:yellow'>{step_text[s+k]}</span>"
+            if s+k < len(step_text):
+                step_text[s+k] = f"<span style='background-color:yellow'>{step_text[s+k]}</span>"
         steps.append("".join(step_text))
         hashes.append(t)
         if p==t and text[s:s+m]==pattern: matches.append(s)
@@ -151,7 +156,7 @@ for algo in algorithms:
     step_index=st.slider("Step", 0, len(steps)-1, 0)
     st.markdown("<div style='font-family:monospace; line-height:1.5'>" + steps[step_index] + "</div>", unsafe_allow_html=True)
 
-    # Show LPS / Bad / Hashes table
+    # Show tables
     if algo=="KMP":
         st.markdown("**LPS Table:**")
         st.write(lps)
@@ -159,5 +164,5 @@ for algo in algorithms:
         st.markdown("**Bad Character Table:**")
         st.write(bad)
     if algo=="Rabin-Karp":
-        st.markdown("**Rolling Hash Values (q=101)**")
+        st.markdown("**Rabin-Karp Rolling Hash Values:**")
         st.write(hashes)
