@@ -177,16 +177,30 @@ if st.button("🔍 Search Pattern"):
                     results.append({"Sequence Name":header,"Algorithm":algo,"Matches":total_matches,"Time (s)":round(elapsed,5)})
             df=pd.DataFrame(results)
             all_results.append(df)
-            # Chart
+            
+            # Chart - Aggregate Aho-Corasick results
             st.markdown("### 📈 Performance Chart")
+            df_plot = df.copy()
+            # Merge Aho-Corasick entries: sum matches, average time
+            aho_mask = df_plot["Algorithm"].str.contains("Aho–Corasick", na=False)
+            if aho_mask.any():
+                aho_total_matches = df_plot[aho_mask]["Matches"].sum()
+                aho_avg_time = df_plot[aho_mask]["Time (s)"].mean()
+                df_plot = df_plot[~aho_mask]
+                df_plot = pd.concat([df_plot, pd.DataFrame([{
+                    "Sequence Name": header,
+                    "Algorithm": "Aho–Corasick",
+                    "Matches": aho_total_matches,
+                    "Time (s)": aho_avg_time
+                }])], ignore_index=True)
+            
             fig, ax = plt.subplots(figsize=(10,5))
-            ax.bar(df["Algorithm"], df["Time (s)"], color="#00B4D8")
+            ax.bar(df_plot["Algorithm"], df_plot["Time (s)"], color="#00B4D8")
             ax.set_ylabel("Time (s)")
             ax.set_title("Algorithm Performance")
-            ax.set_xticklabels(df["Algorithm"], rotation=45, ha='right', fontsize=10)  # Rotate labels and align
-            plt.tight_layout()  # Adjust layout so labels are not cut off
+            ax.set_xticklabels(df_plot["Algorithm"], rotation=45, ha='right', fontsize=10)
+            plt.tight_layout()
             st.pyplot(fig)
-
 
         combined_df=pd.concat(all_results,ignore_index=True)
         st.session_state.results_stored=combined_df
@@ -198,4 +212,3 @@ if st.session_state.results_stored is not None:
     csv_buffer=io.StringIO()
     st.session_state.results_stored.to_csv(csv_buffer,index=False)
     st.download_button(label="📥 Download Results as CSV",data=csv_buffer.getvalue(),file_name="dna_pattern_results.csv",mime="text/csv")
-
