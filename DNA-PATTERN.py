@@ -260,4 +260,15 @@ if st.button("🔍 Search Pattern(s)"):
                 st.pyplot(fig)
 
             else:  # Multi-pattern: Aho–Corasick
-                aho =
+                aho = AhoCorasick(pattern_list)
+                results = aho.search(dna_sequence)
+                if results:
+                    df = pd.DataFrame(
+                        [(pat,pos) for pat, positions in results.items() for pos in positions],
+                        columns=["Pattern","Position"]
+                    )
+                    st.write(df)
+                    csv = df.to_csv(index=False).encode("utf-8")
+                    st.download_button("📥 Download CSV", csv, "aho_results.csv", "text/csv")
+                else:
+                    st.info("No matches found.")
