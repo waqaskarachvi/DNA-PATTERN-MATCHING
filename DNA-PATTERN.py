@@ -177,11 +177,16 @@ if st.button("🔍 Search Pattern"):
                     results.append({"Sequence Name":header,"Algorithm":algo,"Matches":total_matches,"Time (s)":round(elapsed,5)})
             df=pd.DataFrame(results)
             all_results.append(df)
-            st.markdown("### 📊 Algorithm Comparison")
-            st.dataframe(df,use_container_width=True)
+            # Chart
             st.markdown("### 📈 Performance Chart")
-            fig,ax=plt.subplots(); ax.bar(df["Algorithm"],df["Time (s)"],color="#00B4D8"); ax.set_ylabel("Time (s)"); ax.set_title("Algorithm Performance")
+            fig, ax = plt.subplots(figsize=(10,5))
+            ax.bar(df["Algorithm"], df["Time (s)"], color="#00B4D8")
+            ax.set_ylabel("Time (s)")
+            ax.set_title("Algorithm Performance")
+            ax.set_xticklabels(df["Algorithm"], rotation=45, ha='right', fontsize=10)  # Rotate labels and align
+            plt.tight_layout()  # Adjust layout so labels are not cut off
             st.pyplot(fig)
+
 
         combined_df=pd.concat(all_results,ignore_index=True)
         st.session_state.results_stored=combined_df
@@ -193,3 +198,4 @@ if st.session_state.results_stored is not None:
     csv_buffer=io.StringIO()
     st.session_state.results_stored.to_csv(csv_buffer,index=False)
     st.download_button(label="📥 Download Results as CSV",data=csv_buffer.getvalue(),file_name="dna_pattern_results.csv",mime="text/csv")
+
