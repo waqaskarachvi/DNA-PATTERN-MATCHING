@@ -134,28 +134,29 @@ class AhoCorasick:
 
 st.set_page_config(page_title="DNA Pattern Search Tool",layout="wide")
 st.title("🔬 DNA Pattern Search Tool")
+st.write("Single Pattern: select multiple algorithms to compare. Multi-Pattern: Aho–Corasick.")
 
-uploaded_file=st.file_uploader("Upload DNA file (.txt/.fa/.fasta)")
-manual_seq=st.text_area("Or paste DNA sequence (A/T/C/G)",height=150)
+uploaded_file = st.file_uploader("Upload DNA file (.txt/.fa/.fasta)")
+manual_seq = st.text_area("Or paste DNA sequence (A/T/C/G only)", height=150)
 
-sequence=""
+sequence = ""
 if manual_seq.strip():
-    sequence="".join([c for c in manual_seq.upper() if c in "ATCG"])
+    sequence = "".join([c for c in manual_seq.upper() if c in "ATCG"])
 elif uploaded_file:
-    raw=uploaded_file.read().decode("utf-8")
-    lines=[l.strip() for l in raw.splitlines() if not l.startswith(">")]
-    sequence="".join(lines).upper()
-    sequence="".join([c for c in sequence if c in "ATCG"])
+    raw = uploaded_file.read().decode("utf-8")
+    lines = [l.strip() for l in raw.splitlines() if not l.startswith(">")]
+    sequence = "".join(lines).upper()
+    sequence = "".join([c for c in sequence if c in "ATCG"])
 
 if not sequence:
     st.info("No DNA sequence provided yet. Paste or upload to start searching.")
 
-mode=st.radio("Select Search Mode",["Single Pattern Search","Multi-Pattern Search"],index=0)
+mode = st.radio("Select Search Mode", ["Single Pattern Search", "Multi-Pattern Search"], index=0)
 
-# --------------- SINGLE PATTERN ------------------
-if mode=="Single Pattern Search":
-    pattern_raw=st.text_area("Enter single pattern (A/T/C/G)",height=50)
-    algo_options=st.multiselect("Select algorithms",["Naive","KMP","Boyer-Moore","Rabin-Karp"],default=["KMP","Boyer-Moore"])
+# ---------------- SINGLE PATTERN ----------------
+if mode == "Single Pattern Search":
+    pattern_raw = st.text_area("Enter single pattern (A/T/C/G)", height=50)
+    algo_options = st.multiselect("Select algorithms", ["Naive", "KMP", "Boyer-Moore", "Rabin-Karp"], default=["KMP","Boyer-Moore"])
 
     if st.button("Search Single Pattern"):
         if not sequence:
@@ -163,19 +164,74 @@ if mode=="Single Pattern Search":
         elif not pattern_raw.strip():
             st.warning("Enter a pattern to search.")
         else:
-            patterns=[p.strip() for p in pattern_raw.strip().splitlines() if p.strip()]
-            if len(patterns)!=1:
+            patterns = [p.strip() for p in pattern_raw.strip().splitlines() if p.strip()]
+            if len(patterns) != 1:
                 st.error("Single Pattern Search mode accepts only ONE pattern. Please enter a single line pattern.")
             else:
-                pat="".join([c for c in patterns[0].upper() if c in "ATCG"])
+                pat = "".join([c for c in patterns[0].upper() if c in "ATCG"])
                 if not pat:
                     st.error("Pattern contains no valid A/T/C/G characters.")
                 else:
-                    algo_funcs={
+                    algo_funcs = {
                         "Naive": naive_search,
                         "KMP": kmp_search,
                         "Boyer-Moore": boyer_moore_search,
                         "Rabin-Karp": rabin_karp_search
                     }
-                    results_list=[]
-                    for algo i
+                    results_list = []
+                    for algo in algo_options:
+                        start = time.time()
+                        found = algo_funcs[algo](sequence, pat)
+                        elapsed = time.time() - start
+                        results_list.append({"Algorithm": algo, "Matches": len(found), "Time(s)": round(elapsed,5), "Positions": found})
+
+                    df = pd.DataFrame(results_list)
+                    st.markdown("### 📊 Algorithm Comparison")
+                    st.dataframe(df[["Algorithm","Matches","Time(s)"]])
+
+                    fig, ax = plt.subplots()
+                    ax.bar(df["Algorithm"], df["Time(s)"], color="#00B4D8")
+                    ax.set_ylabel("Time (s)")
+                    ax.set_title("Execution Time Comparison")
+                    st.pyplot(fig)
+
+                    st.markdown("### 🎨 Sequence Snippet Highlight")
+                    for row in results_list:
+                        positions = row["Positions"]
+                        if positions:
+                            snippet = list(sequence[:400])
+                            for pos in positions:
+                                if pos < 400:
+                                    for j in range(len(pat)):
+                                        if pos+j < 400:
+                                            snippet[pos+j] = f"**{snippet[pos+j]}**"
+                            st.markdown(f"**{row['Algorithm']}**: "+"".join(snippet))
+                        else:
+                            st.info(f"{row['Algorithm']}: No matches found.")
+
+# ---------------- MULTI-PATTERN ----------------
+else:
+    patterns_raw = st.text_area("Enter multiple patterns (one per line, min 2)")
+    if st.button("Search Multiple Patterns (Aho–Corasick)"):
+        if not sequence:
+            st.warning("Provide a DNA sequence first!")
+        else:
+            patterns = [p.strip().upper() for p in patterns_raw.splitlines() if p.strip()]
+            patterns = ["".join([c for c in p if c in "ATCG"]) for p in patterns]
+            patterns = [p for p in patterns if p]
+            if len(patterns) < 2:
+                st.error("Enter at least 2 valid patterns for multi-pattern search.")
+            else:
+                aho = AhoCorasick(patterns)
+                results = aho.search(sequence)
+                if not results:
+                    st.info("No matches found.")
+                else:
+                    rows = []
+                    for pat,pos_list in results.items():
+                        for pos in pos_list:
+                            rows.append((pat,pos))
+                    df = pd.DataFrame(rows,columns=["Pattern","Position"])
+                    st.write(df)
+                    csv = df.to_csv(index=False).encode("utf-8")
+                    st.download_button("Download CSV",csv,"aho_results.csv","text/csv")
