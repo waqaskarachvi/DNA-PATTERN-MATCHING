@@ -178,29 +178,22 @@ if st.button("🔍 Search Pattern"):
             df=pd.DataFrame(results)
             all_results.append(df)
             
-            # Display tables
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("### 📊 Detailed Results (Per Pattern)")
-                st.dataframe(df, use_container_width=True)
-            
-            with col2:
-                st.markdown("### 📊 Aggregated Results (Overall)")
-                df_aggregated = df.copy()
-                # Merge Aho-Corasick entries
-                aho_mask = df_aggregated["Algorithm"].str.contains("Aho–Corasick", na=False)
-                if aho_mask.any():
-                    aho_total_matches = df_aggregated[aho_mask]["Matches"].sum()
-                    aho_avg_time = df_aggregated[aho_mask]["Time (s)"].mean()
-                    df_aggregated = df_aggregated[~aho_mask]
-                    df_aggregated = pd.concat([df_aggregated, pd.DataFrame([{
-                        "Sequence Name": header,
-                        "Algorithm": "Aho–Corasick",
-                        "Matches": aho_total_matches,
-                        "Time (s)": round(aho_avg_time, 5)
-                    }])], ignore_index=True)
-                st.dataframe(df_aggregated, use_container_width=True)
+            # Display aggregated results table
+            st.markdown("### 📊 Performance Results")
+            df_aggregated = df.copy()
+            # Merge Aho-Corasick entries
+            aho_mask = df_aggregated["Algorithm"].str.contains("Aho–Corasick", na=False)
+            if aho_mask.any():
+                aho_total_matches = df_aggregated[aho_mask]["Matches"].sum()
+                aho_avg_time = df_aggregated[aho_mask]["Time (s)"].mean()
+                df_aggregated = df_aggregated[~aho_mask]
+                df_aggregated = pd.concat([df_aggregated, pd.DataFrame([{
+                    "Sequence Name": header,
+                    "Algorithm": "Aho–Corasick",
+                    "Matches": aho_total_matches,
+                    "Time (s)": round(aho_avg_time, 5)
+                }])], ignore_index=True)
+            st.dataframe(df_aggregated, use_container_width=True)
             
             # Chart - Aggregate Aho-Corasick results
             st.markdown("### 📈 Performance Chart")
