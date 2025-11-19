@@ -1,26 +1,22 @@
 import streamlit as st
 import pandas as pd
 from collections import deque, defaultdict
+import time
+import matplotlib.pyplot as plt
 
-# -----------------------------------------------------------------------------------
-# SEARCH ALGORITHMS (SINGLE PATTERN)
-# -----------------------------------------------------------------------------------
+# ------------------ SEARCH ALGORITHMS ------------------
 
 def naive_search(text, pattern):
     if not pattern or len(pattern) > len(text):
         return []
     occurrences = []
-    n = len(text)
-    m = len(pattern)
+    n, m = len(text), len(pattern)
     for i in range(n - m + 1):
         if text[i:i + m] == pattern:
             occurrences.append(i)
     return occurrences
 
-
 def compute_lps(pattern):
-    if not pattern:
-        return []
     lps = [0] * len(pattern)
     j = 0
     i = 1
@@ -36,7 +32,6 @@ def compute_lps(pattern):
                 lps[i] = 0
                 i += 1
     return lps
-
 
 def kmp_search(text, pattern):
     if not pattern or len(pattern) > len(text):
@@ -58,25 +53,19 @@ def kmp_search(text, pattern):
                 i += 1
     return occurrences
 
-
 def bad_character_table(pattern):
     table = {}
-    length = len(pattern)
-    for i in range(length):
-        table[pattern[i]] = i
+    for i, c in enumerate(pattern):
+        table[c] = i
     return table
-
 
 def boyer_moore_search(text, pattern):
     if not pattern or len(pattern) > len(text):
         return []
-
     occurrences = []
     bad_char = bad_character_table(pattern)
-    n = len(text)
-    m = len(pattern)
+    n, m = len(text), len(pattern)
     s = 0
-
     while s <= n - m:
         j = m - 1
         while j >= 0 and pattern[j] == text[s + j]:
@@ -88,32 +77,27 @@ def boyer_moore_search(text, pattern):
             s += max(1, j - bad_char.get(text[s + j], -1))
     return occurrences
 
-
 def rabin_karp_search(text, pattern, d=256, q=101):
     if not pattern or len(pattern) > len(text):
         return []
-    n = len(text)
-    m = len(pattern)
+    n, m = len(text), len(pattern)
     occurrences = []
     h = pow(d, m - 1) % q
     p = 0
     t = 0
     for i in range(m):
-        p = (d * p + ord(pattern[i])) % q
-        t = (d * t + ord(text[i])) % q
+        p = (d*p + ord(pattern[i])) % q
+        t = (d*t + ord(text[i])) % q
     for s in range(n - m + 1):
-        if p == t:
-            if text[s:s + m] == pattern:
-                occurrences.append(s)
+        if p == t and text[s:s+m] == pattern:
+            occurrences.append(s)
         if s < n - m:
-            t = (d * (t - ord(text[s]) * h) + ord(text[s + m])) % q
+            t = (d*(t - ord(text[s])*h) + ord(text[s+m])) % q
             if t < 0:
                 t += q
     return occurrences
 
-# -----------------------------------------------------------------------------------
-# AHO–CORASICK (MULTI-PATTERN)
-# -----------------------------------------------------------------------------------
+# ------------------ AHO-CORASICK ------------------
 
 class AhoNode:
     def __init__(self):
@@ -126,7 +110,6 @@ class AhoCorasick:
         self.root = AhoNode()
         self.build_trie(patterns)
         self.build_failure_links()
-
     def build_trie(self, patterns):
         for index, pat in enumerate(patterns):
             node = self.root
@@ -135,28 +118,24 @@ class AhoCorasick:
                     node.children[char] = AhoNode()
                 node = node.children[char]
             node.output.append((index, pat))
-
     def build_failure_links(self):
         queue = deque()
         for child in self.root.children.values():
             child.fail = self.root
             queue.append(child)
-
         while queue:
             current = queue.popleft()
             for char, next_node in current.children.items():
                 fail_node = current.fail
                 while fail_node and char not in fail_node.children:
                     fail_node = fail_node.fail
-                next_node.fail = fail_node.children[char] if (fail_node and char in fail_node.children) else self.root
+                next_node.fail = fail_node.children[char] if fail_node and char in fail_node.children else self.root
                 if next_node.fail and next_node.fail.output:
                     next_node.output += next_node.fail.output
                 queue.append(next_node)
-
     def search(self, text):
         node = self.root
         results = defaultdict(list)
-
         for i, char in enumerate(text):
             while node is not None and char not in node.children:
                 node = node.fail
@@ -168,20 +147,17 @@ class AhoCorasick:
                 results[pattern].append(i - len(pattern) + 1)
         return results
 
-# -----------------------------------------------------------------------------------
-# STREAMLIT UI
-# -----------------------------------------------------------------------------------
+# ------------------ STREAMLIT UI ------------------
 
 st.set_page_config(page_title="DNA Pattern Search Tool", layout="wide")
 st.title("🔬 DNA Pattern Search Tool")
-st.write("Single pattern: Naive/KMP/Boyer–Moore/Rabin–Karp. Multi-pattern: Aho–Corasick.")
+st.write("Single pattern: select multiple algorithms to compare. Multi-pattern: Aho–Corasick.")
 
 uploaded_file = st.file_uploader("Upload DNA file (txt/fasta)", type=["txt", "fa", "fasta"])
 manual_seq = st.text_area("Or paste DNA sequence (A/T/C/G only)", height=150)
 
-# Prepare sequence
 sequence = ""
-if manual_seq and manual_seq.strip():
+if manual_seq.strip():
     sequence = "".join([c for c in manual_seq.upper() if c in "ATCG"])
 elif uploaded_file:
     raw = uploaded_file.read().decode("utf-8")
@@ -191,14 +167,15 @@ elif uploaded_file:
     sequence = "".join([c for c in sequence if c in "ATCG"])
 
 if not sequence:
-    st.info("No DNA sequence provided. Paste it or upload a file.")
+    st.info("No DNA sequence provided. Paste or upload to start searching.")
 
 mode = st.radio("Select Search Mode", ["Single Pattern Search", "Multi-Pattern Search"], index=0)
 
-# ------------------ Single Pattern ------------------
+# ------------------ SINGLE PATTERN MULTI-ALGO ------------------
 if mode == "Single Pattern Search":
     pattern = st.text_input("Enter single pattern (A/T/C/G)")
-    algorithm = st.selectbox("Select algorithm", ["Naive", "KMP", "Boyer-Moore", "Rabin-Karp"])
+    algo_options = st.multiselect("Select algorithms", ["Naive", "KMP", "Boyer-Moore", "Rabin-Karp"], default=["KMP","Boyer-Moore"])
+
     if st.button("Search Single Pattern"):
         if not sequence:
             st.warning("Provide a DNA sequence first!")
@@ -207,31 +184,49 @@ if mode == "Single Pattern Search":
         else:
             pat = "".join([c for c in pattern.upper() if c in "ATCG"])
             if not pat:
-                st.error("Pattern contains no valid characters (A/T/C/G).")
+                st.error("Pattern contains no valid A/T/C/G characters.")
             else:
-                if algorithm == "Naive":
-                    found = naive_search(sequence, pat)
-                elif algorithm == "KMP":
-                    found = kmp_search(sequence, pat)
-                elif algorithm == "Boyer-Moore":
-                    found = boyer_moore_search(sequence, pat)
-                else:
-                    found = rabin_karp_search(sequence, pat)
+                algo_funcs = {
+                    "Naive": naive_search,
+                    "KMP": kmp_search,
+                    "Boyer-Moore": boyer_moore_search,
+                    "Rabin-Karp": rabin_karp_search
+                }
+                results_list = []
 
-                st.success(f"Found {len(found)} matches.")
-                if found:
-                    st.write(found)
-                    snippet = list(sequence[:400])
-                    for pos in found:
-                        if pos < 400:
-                            for j in range(len(pat)):
-                                if pos + j < 400:
-                                    snippet[pos + j] = f"**{snippet[pos + j]}**"
-                    st.markdown("".join(snippet))
-                else:
-                    st.info("No matches found.")
+                for algo in algo_options:
+                    start = time.time()
+                    found = algo_funcs[algo](sequence, pat)
+                    elapsed = time.time() - start
+                    results_list.append({"Algorithm": algo, "Matches": len(found), "Time(s)": round(elapsed,5), "Positions": found})
 
-# ------------------ Multi Pattern ------------------
+                df = pd.DataFrame(results_list)
+                st.markdown("### 📊 Algorithm Comparison")
+                st.dataframe(df[["Algorithm","Matches","Time(s)"]])
+
+                # Bar chart
+                fig, ax = plt.subplots()
+                ax.bar(df["Algorithm"], df["Time(s)"], color="#00B4D8")
+                ax.set_ylabel("Time (s)")
+                ax.set_title("Execution Time Comparison")
+                st.pyplot(fig)
+
+                # Highlight first 400 chars for each algorithm
+                st.markdown("### 🎨 Sequence Snippet Highlight")
+                for row in results_list:
+                    positions = row["Positions"]
+                    if positions:
+                        snippet = list(sequence[:400])
+                        for pos in positions:
+                            if pos < 400:
+                                for j in range(len(pat)):
+                                    if pos + j < 400:
+                                        snippet[pos + j] = f"**{snippet[pos + j]}**"
+                        st.markdown(f"**{row['Algorithm']}**: "+"".join(snippet))
+                    else:
+                        st.info(f"{row['Algorithm']}: No matches found.")
+
+# ------------------ MULTI-PATTERN ------------------
 else:
     patterns_raw = st.text_area("Enter multiple patterns (one per line, min 2)")
     if st.button("Search Multiple Patterns (Aho–Corasick)"):
@@ -242,7 +237,7 @@ else:
             patterns = ["".join([c for c in p if c in "ATCG"]) for p in patterns]
             patterns = [p for p in patterns if p]
             if len(patterns) < 2:
-                st.error("Enter at least 2 valid patterns (A/T/C/G) for multi-pattern search.")
+                st.error("Enter at least 2 valid patterns for multi-pattern search.")
             else:
                 aho = AhoCorasick(patterns)
                 results = aho.search(sequence)
@@ -252,9 +247,8 @@ else:
                     rows = []
                     for pat, pos_list in results.items():
                         for pos in pos_list:
-                            rows.append((pat, pos))
-                    df = pd.DataFrame(rows, columns=["Pattern", "Position"])
+                            rows.append((pat,pos))
+                    df = pd.DataFrame(rows, columns=["Pattern","Position"])
                     st.write(df)
-
                     csv = df.to_csv(index=False).encode("utf-8")
                     st.download_button("Download CSV", csv, "aho_results.csv", "text/csv")
