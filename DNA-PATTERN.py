@@ -67,7 +67,7 @@ pattern_input = st.text_input(
 ).strip().upper()
 
 algorithms = ["Naïve Search", "KMP", "Boyer–Moore", "Rabin–Karp", "Aho–Corasick"]
-selected_algos = st.multiselect("⚙️ Select Algorithms", algorithms, default=["KMP","Boyer–Moore"])
+selected_algos = st.multiselect("⚙️ Select Algorithms", algorithms, default=algorithms)
 
 # ==========================
 # ALGORITHMS
