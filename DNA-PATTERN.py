@@ -206,12 +206,19 @@ if st.button("🔍 Search Pattern"):
                     
                     # Single entry for Aho-Corasick (finds all patterns simultaneously)
                     results.append({
-                        "Sequence Name": header,
                         "Algorithm": algo,
                         "Pattern": "ALL PATTERNS",
                         "Matches": total_matches,
                         "Comparisons": comparisons,
                         "Time (s)": round(elapsed, 5)
+                    })
+                    # Add empty row for spacing
+                    results.append({
+                        "Algorithm": "",
+                        "Pattern": "",
+                        "Matches": "",
+                        "Comparisons": "",
+                        "Time (s)": ""
                     })
                 else:
                     # Run single-pattern algorithms sequentially for multiple patterns
@@ -231,7 +238,6 @@ if st.button("🔍 Search Pattern"):
                         total_comparisons += comp
                         
                         results.append({
-                            "Sequence Name": header,
                             "Algorithm": algo,
                             "Pattern": pat,
                             "Matches": match_count,
@@ -241,14 +247,21 @@ if st.button("🔍 Search Pattern"):
                         pattern_results.append(match_count)
                     
                     # Add TOTAL row for sequential algorithms
-                    total_time = sum([r["Time (s)"] for r in results if r["Algorithm"]==algo and r["Pattern"]!="TOTAL"])
+                    total_time = sum([r["Time (s)"] for r in results if r["Algorithm"]==algo and r["Pattern"]!="TOTAL" and r["Time (s)"]!=""])
                     results.append({
-                        "Sequence Name": header,
                         "Algorithm": algo,
                         "Pattern": "TOTAL",
                         "Matches": sum(pattern_results),
                         "Comparisons": total_comparisons,
                         "Time (s)": round(total_time, 5)
+                    })
+                    # Add empty row for spacing
+                    results.append({
+                        "Algorithm": "",
+                        "Pattern": "",
+                        "Matches": "",
+                        "Comparisons": "",
+                        "Time (s)": ""
                     })
             
             df=pd.DataFrame(results)
@@ -322,25 +335,15 @@ if st.button("🔍 Search Pattern"):
             # Chart - Performance comparison
             st.markdown("### 📈 Performance Chart")
             # Create chart data using TOTAL rows only
-            df_chart = df[df["Pattern"] == "TOTAL"].copy()
-            # For Aho-Corasick, take the first entry (all have same time)
-            aho_rows = df[df["Algorithm"] == "Aho–Corasick"]
-            if not aho_rows.empty:
-                aho_total_matches = aho_rows["Matches"].sum()
-                aho_time = aho_rows["Time (s)"].iloc[0]
-                df_chart = pd.concat([df_chart, pd.DataFrame([{
-                    "Sequence Name": header,
-                    "Algorithm": "Aho–Corasick",
-                    "Pattern": "TOTAL",
-                    "Matches": aho_total_matches,
-                    "Time (s)": aho_time
-                }])], ignore_index=True)
+            df_chart = df[(df["Pattern"] == "TOTAL") | (df["Pattern"] == "ALL PATTERNS")].copy()
             
             fig, ax = plt.subplots(figsize=(10,5))
-            ax.bar(df_chart["Algorithm"], df_chart["Time (s)"], color="#00B4D8")
+            # Filter out empty rows for chart
+            df_chart_filtered = df_chart[df_chart["Algorithm"] != ""]
+            ax.bar(df_chart_filtered["Algorithm"], df_chart_filtered["Time (s)"], color="#00B4D8")
             ax.set_ylabel("Time (s)")
             ax.set_title("Algorithm Performance (Total Time)")
-            ax.set_xticklabels(df_chart["Algorithm"], rotation=45, ha='right', fontsize=10)
+            ax.set_xticklabels(df_chart_filtered["Algorithm"], rotation=45, ha='right', fontsize=10)
             plt.tight_layout()
             st.pyplot(fig)
 
