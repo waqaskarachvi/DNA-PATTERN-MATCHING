@@ -70,44 +70,76 @@ algorithms = ["Naïve Search", "KMP", "Boyer–Moore", "Rabin–Karp", "Aho–Co
 selected_algos = st.multiselect("⚙️ Select Algorithms", algorithms, default=algorithms)
 
 # ==========================
-# ALGORITHMS
+# ALGORITHMS (with comparison counting)
 # ==========================
 def naive_search(text, pattern):
-    return [i for i in range(len(text)-len(pattern)+1) if text[i:i+len(pattern)] == pattern]
+    comparisons = 0
+    results = []
+    for i in range(len(text)-len(pattern)+1):
+        comparisons += 1
+        match = True
+        for j in range(len(pattern)):
+            comparisons += 1
+            if text[i+j] != pattern[j]:
+                match = False
+                break
+        if match:
+            results.append(i)
+    return results, comparisons
 
 def kmp_search(text, pattern):
+    comparisons = 0
     lps=[0]*len(pattern); j=0
     for i in range(1,len(pattern)):
-        while j>0 and pattern[i]!=pattern[j]: j=lps[j-1]
+        while j>0 and pattern[i]!=pattern[j]: 
+            j=lps[j-1]
+            comparisons += 1
+        comparisons += 1
         if pattern[i]==pattern[j]: j+=1; lps[i]=j
     res=[]; j=0
     for i in range(len(text)):
-        while j>0 and text[i]!=pattern[j]: j=lps[j-1]
+        while j>0 and text[i]!=pattern[j]: 
+            j=lps[j-1]
+            comparisons += 1
+        comparisons += 1
         if text[i]==pattern[j]: j+=1
         if j==len(pattern): res.append(i-j+1); j=lps[j-1]
-    return res
+    return res, comparisons
 
 def boyer_moore_search(text, pattern):
+    comparisons = 0
     m,n=len(pattern),len(text)
     bad_char={pattern[i]:i for i in range(m)}
     res=[]; s=0
     while s<=n-m:
         j=m-1
-        while j>=0 and pattern[j]==text[s+j]: j-=1
-        if j<0: res.append(s); s+=(m-bad_char.get(text[s+m],-1)) if s+m<n else 1
-        else: s+=max(1,j-bad_char.get(text[s+j],-1))
-    return res
+        while j>=0:
+            comparisons += 1
+            if pattern[j]!=text[s+j]:
+                break
+            j-=1
+        if j<0: 
+            res.append(s)
+            s+=(m-bad_char.get(text[s+m],-1)) if s+m<n else 1
+        else: 
+            s+=max(1,j-bad_char.get(text[s+j],-1))
+    return res, comparisons
 
 def rabin_karp(text, pattern, d=256, q=101):
+    comparisons = 0
     m,n=len(pattern),len(text); p=t=0; h=pow(d,m-1)%q; res=[]
     for i in range(m): p=(d*p+ord(pattern[i]))%q; t=(d*t+ord(text[i]))%q
     for s in range(n-m+1):
-        if p==t and text[s:s+m]==pattern: res.append(s)
+        comparisons += 1
+        if p==t:
+            if text[s:s+m]==pattern: 
+                res.append(s)
+                comparisons += m
         if s<n-m: t=(d*(t-ord(text[s])*h)+ord(text[s+m]))%q; t+=q if t<0 else 0
-    return res
+    return res, comparisons
 
 # ==========================
-# AHO-CORASICK
+# AHO-CORASICK (with comparison counting)
 # ==========================
 class AhoNode:
     def __init__(self): self.children={}; self.fail=None; self.output=[]
@@ -135,12 +167,16 @@ class AhoCorasick:
     def search(self,text):
         node=self.root
         res=defaultdict(list)
+        comparisons = 0
         for i,c in enumerate(text):
-            while node and c not in node.children: node=node.fail
+            comparisons += 1
+            while node and c not in node.children: 
+                node=node.fail
+                comparisons += 1
             if not node: node=self.root; continue
             node=node.children[c]
             for pat in node.output: res[pat].append(i-len(pat)+1)
-        return res
+        return res, comparisons
 
 # ==========================
 # RUN ANALYSIS
@@ -156,46 +192,65 @@ if st.button("🔍 Search Pattern"):
         for header,dna_sequence in sequences.items():
             st.markdown(f"## 🧫 Results for **{header}** ({len(dna_sequence)} bp)")
             results=[]
+            algo_times = {}
+            algo_comparisons = {}
+            
             for algo in selected_algos:
                 if algo=="Aho–Corasick":
                     if len(patterns_list)<2: st.warning("⚠️ Aho–Corasick requires multiple patterns."); continue
                     start=time.time()
-                    matches=AhoCorasick(patterns_list).search(dna_sequence)
+                    matches, comparisons = AhoCorasick(patterns_list).search(dna_sequence)
                     elapsed=time.time()-start
-                    # Add individual pattern results for Aho-Corasick
-                    for pat in patterns_list:
-                        match_count = len(matches.get(pat, []))
-                        results.append({
-                            "Sequence Name": header,
-                            "Algorithm": algo,
-                            "Pattern": pat,
-                            "Matches": match_count,
-                            "Time (s)": round(elapsed, 5)
-                        })
+                    
+                    total_matches = sum(len(pos_list) for pos_list in matches.values())
+                    
+                    # Single entry for Aho-Corasick (finds all patterns simultaneously)
+                    results.append({
+                        "Sequence Name": header,
+                        "Algorithm": algo,
+                        "Pattern": "ALL PATTERNS",
+                        "Matches": total_matches,
+                        "Comparisons": comparisons,
+                        "Time (s)": round(elapsed, 5)
+                    })
                 else:
                     # Run single-pattern algorithms sequentially for multiple patterns
-                    start=time.time()
+                    pattern_results = []
+                    total_comparisons = 0
+                    
                     for pat in patterns_list:
-                        match_count = len({"Naïve Search": naive_search,
-                                            "KMP": kmp_search,
-                                            "Boyer–Moore": boyer_moore_search,
-                                            "Rabin–Karp": rabin_karp}[algo](dna_sequence, pat))
+                        start_pat = time.time()
+                        result = {"Naïve Search": naive_search,
+                                 "KMP": kmp_search,
+                                 "Boyer–Moore": boyer_moore_search,
+                                 "Rabin–Karp": rabin_karp}[algo](dna_sequence, pat)
+                        elapsed_pat = time.time() - start_pat
+                        
+                        matches_list, comp = result
+                        match_count = len(matches_list)
+                        total_comparisons += comp
+                        
                         results.append({
                             "Sequence Name": header,
                             "Algorithm": algo,
                             "Pattern": pat,
                             "Matches": match_count,
-                            "Time (s)": "-"  # Individual times not meaningful for sequential
+                            "Comparisons": comp,
+                            "Time (s)": round(elapsed_pat, 5)
                         })
-                    elapsed=time.time()-start
-                    # Add total time row
+                        pattern_results.append(match_count)
+                    
+                    # Add TOTAL row for sequential algorithms
+                    total_time = sum([r["Time (s)"] for r in results if r["Algorithm"]==algo and r["Pattern"]!="TOTAL"])
                     results.append({
                         "Sequence Name": header,
                         "Algorithm": algo,
                         "Pattern": "TOTAL",
-                        "Matches": sum([r["Matches"] for r in results if r["Algorithm"]==algo and r["Pattern"]!="TOTAL"]),
-                        "Time (s)": round(elapsed, 5)
+                        "Matches": sum(pattern_results),
+                        "Comparisons": total_comparisons,
+                        "Time (s)": round(total_time, 5)
                     })
+            
             df=pd.DataFrame(results)
             all_results.append(df)
             
