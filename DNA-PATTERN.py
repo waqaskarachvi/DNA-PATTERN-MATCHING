@@ -162,38 +162,46 @@ if st.button("🔍 Search Pattern"):
                     start=time.time()
                     matches=AhoCorasick(patterns_list).search(dna_sequence)
                     elapsed=time.time()-start
-                    for pat,pos_list in matches.items():
-                        results.append({"Sequence Name":header,"Algorithm":f"Aho–Corasick ({pat})","Matches":len(pos_list),"Time (s)":round(elapsed,5)})
-                else:
-                    start=time.time()
-                    # Run single-pattern algorithms sequentially for multiple patterns
-                    total_matches=0
+                    # Add individual pattern results for Aho-Corasick
                     for pat in patterns_list:
-                        total_matches+=len({"Naïve Search": naive_search,
+                        match_count = len(matches.get(pat, []))
+                        results.append({
+                            "Sequence Name": header,
+                            "Algorithm": algo,
+                            "Pattern": pat,
+                            "Matches": match_count,
+                            "Time (s)": round(elapsed, 5)
+                        })
+                else:
+                    # Run single-pattern algorithms sequentially for multiple patterns
+                    start=time.time()
+                    for pat in patterns_list:
+                        match_count = len({"Naïve Search": naive_search,
                                             "KMP": kmp_search,
                                             "Boyer–Moore": boyer_moore_search,
                                             "Rabin–Karp": rabin_karp}[algo](dna_sequence, pat))
+                        results.append({
+                            "Sequence Name": header,
+                            "Algorithm": algo,
+                            "Pattern": pat,
+                            "Matches": match_count,
+                            "Time (s)": "-"  # Individual times not meaningful for sequential
+                        })
                     elapsed=time.time()-start
-                    results.append({"Sequence Name":header,"Algorithm":algo,"Matches":total_matches,"Time (s)":round(elapsed,5)})
+                    # Add total time row
+                    results.append({
+                        "Sequence Name": header,
+                        "Algorithm": algo,
+                        "Pattern": "TOTAL",
+                        "Matches": sum([r["Matches"] for r in results if r["Algorithm"]==algo and r["Pattern"]!="TOTAL"]),
+                        "Time (s)": round(elapsed, 5)
+                    })
             df=pd.DataFrame(results)
             all_results.append(df)
             
-            # Display aggregated results table
+            # Display results table
             st.markdown("### 📊 Performance Results")
-            df_aggregated = df.copy()
-            # Merge Aho-Corasick entries
-            aho_mask = df_aggregated["Algorithm"].str.contains("Aho–Corasick", na=False)
-            if aho_mask.any():
-                aho_total_matches = df_aggregated[aho_mask]["Matches"].sum()
-                aho_avg_time = df_aggregated[aho_mask]["Time (s)"].mean()
-                df_aggregated = df_aggregated[~aho_mask]
-                df_aggregated = pd.concat([df_aggregated, pd.DataFrame([{
-                    "Sequence Name": header,
-                    "Algorithm": "Aho–Corasick",
-                    "Matches": aho_total_matches,
-                    "Time (s)": round(aho_avg_time, 5)
-                }])], ignore_index=True)
-            st.dataframe(df_aggregated, use_container_width=True)
+            st.dataframe(df, use_container_width=True)
             
             # Visualization of pattern matches in first 500 bp
             st.markdown("### 🎨 Pattern Visualization (First 500 bp)")
@@ -256,15 +264,28 @@ if st.button("🔍 Search Pattern"):
             else:
                 st.info("No pattern matches found in the first 500 bp.")
             
-            # Chart - Aggregate Aho-Corasick results
+            # Chart - Performance comparison
             st.markdown("### 📈 Performance Chart")
-            df_plot = df_aggregated.copy()
+            # Create chart data using TOTAL rows only
+            df_chart = df[df["Pattern"] == "TOTAL"].copy()
+            # For Aho-Corasick, take the first entry (all have same time)
+            aho_rows = df[df["Algorithm"] == "Aho–Corasick"]
+            if not aho_rows.empty:
+                aho_total_matches = aho_rows["Matches"].sum()
+                aho_time = aho_rows["Time (s)"].iloc[0]
+                df_chart = pd.concat([df_chart, pd.DataFrame([{
+                    "Sequence Name": header,
+                    "Algorithm": "Aho–Corasick",
+                    "Pattern": "TOTAL",
+                    "Matches": aho_total_matches,
+                    "Time (s)": aho_time
+                }])], ignore_index=True)
             
             fig, ax = plt.subplots(figsize=(10,5))
-            ax.bar(df_plot["Algorithm"], df_plot["Time (s)"], color="#00B4D8")
+            ax.bar(df_chart["Algorithm"], df_chart["Time (s)"], color="#00B4D8")
             ax.set_ylabel("Time (s)")
-            ax.set_title("Algorithm Performance")
-            ax.set_xticklabels(df_plot["Algorithm"], rotation=45, ha='right', fontsize=10)
+            ax.set_title("Algorithm Performance (Total Time)")
+            ax.set_xticklabels(df_chart["Algorithm"], rotation=45, ha='right', fontsize=10)
             plt.tight_layout()
             st.pyplot(fig)
 
