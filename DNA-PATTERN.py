@@ -192,8 +192,6 @@ if st.button("🔍 Search Pattern"):
         for header,dna_sequence in sequences.items():
             st.markdown(f"## 🧫 Results for **{header}** ({len(dna_sequence)} bp)")
             results=[]
-            algo_times = {}
-            algo_comparisons = {}
             
             for algo in selected_algos:
                 if algo=="Aho–Corasick":
@@ -271,66 +269,75 @@ if st.button("🔍 Search Pattern"):
             st.markdown("### 📊 Performance Results")
             st.dataframe(df, use_container_width=True)
             
-            # Visualization of pattern matches in first 500 bp
-            st.markdown("### 🎨 Pattern Visualization (First 500 bp)")
-            preview_length = min(500, len(dna_sequence))
-            preview_seq = dna_sequence[:preview_length]
+            # Visualization of pattern matches - separate for each pattern
+            st.markdown("### 🎨 Pattern Visualizations (500 bp window for each pattern)")
             
-            # Find all pattern positions in preview
             pattern_colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E2"]
-            pattern_positions = {}
             
             for idx, pat in enumerate(patterns_list):
                 color = pattern_colors[idx % len(pattern_colors)]
+                
+                # Find all positions of this pattern in entire sequence
                 positions = []
-                for i in range(len(preview_seq) - len(pat) + 1):
-                    if preview_seq[i:i+len(pat)] == pat:
+                for i in range(len(dna_sequence) - len(pat) + 1):
+                    if dna_sequence[i:i+len(pat)] == pat:
                         positions.append(i)
+                
+                # Always show pattern header
+                st.markdown(f"#### 🔍 Pattern: **{pat}**")
+                
                 if positions:
-                    pattern_positions[pat] = {"positions": positions, "color": color}
-            
-            # Create highlighted HTML
-            if pattern_positions:
-                # Create a list to track which positions are highlighted
-                highlighted = [False] * len(preview_seq)
-                highlight_info = [None] * len(preview_seq)
-                
-                # Mark all positions that should be highlighted (prioritize first patterns)
-                for pat, info in pattern_positions.items():
-                    for pos in info["positions"]:
-                        for i in range(pos, pos + len(pat)):
-                            if not highlighted[i]:
+                    # Get first occurrence position
+                    first_match_pos = positions[0]
+                    
+                    # Extract 500 bp window starting from first match
+                    start_pos = first_match_pos
+                    end_pos = min(start_pos + 500, len(dna_sequence))
+                    preview_seq = dna_sequence[start_pos:end_pos]
+                    
+                    st.success(f"✅ {len(positions)} match(es) found in entire sequence")
+                    st.info(f"📍 Showing sequence from position **{start_pos}** to **{end_pos}** (length: {len(preview_seq)} bp)")
+                    
+                    # Find pattern positions within this window
+                    positions_in_window = [pos - start_pos for pos in positions if start_pos <= pos < end_pos]
+                    
+                    # Create highlighted HTML
+                    highlighted = [False] * len(preview_seq)
+                    
+                    # Mark all positions that should be highlighted
+                    for pos in positions_in_window:
+                        for i in range(pos, min(pos + len(pat), len(preview_seq))):
+                            if i < len(highlighted):
                                 highlighted[i] = True
-                                highlight_info[i] = info["color"]
-                
-                # Build HTML with highlighted sections
-                html_parts = ['<div style="font-family: monospace; line-height: 2; word-wrap: break-word; background-color: #1E2636; padding: 15px; border-radius: 10px; border: 1px solid #00B4D8;">']
-                
-                i = 0
-                while i < len(preview_seq):
-                    if highlighted[i]:
-                        # Find the end of this highlighted section
-                        color = highlight_info[i]
-                        start = i
-                        while i < len(preview_seq) and highlighted[i] and highlight_info[i] == color:
+                    
+                    # Build HTML with highlighted sections
+                    html_parts = ['<div style="font-family: monospace; line-height: 2; word-wrap: break-word; background-color: #1E2636; padding: 15px; border-radius: 10px; border: 1px solid #00B4D8;">']
+                    
+                    i = 0
+                    while i < len(preview_seq):
+                        if highlighted[i]:
+                            start_hl = i
+                            while i < len(preview_seq) and highlighted[i]:
+                                i += 1
+                            html_parts.append(f'<span style="background-color: {color}; padding: 2px 4px; border-radius: 3px; font-weight: bold;">{preview_seq[start_hl:i]}</span>')
+                        else:
+                            html_parts.append(preview_seq[i])
                             i += 1
-                        html_parts.append(f'<span style="background-color: {color}; padding: 2px 4px; border-radius: 3px; font-weight: bold;">{preview_seq[start:i]}</span>')
-                    else:
-                        html_parts.append(preview_seq[i])
-                        i += 1
+                    
+                    html_parts.append('</div>')
+                    
+                    # Legend for this pattern
+                    legend_html = '<div style="margin-top: 10px; padding: 10px; background-color: #1E2636; border-radius: 8px;">'
+                    legend_html += f'<strong>Pattern:</strong> <span style="background-color: {color}; padding: 3px 8px; border-radius: 3px; margin: 0 5px; font-weight: bold;">{pat}</span>'
+                    legend_html += f' <span style="margin-left: 15px;">{len(positions_in_window)} occurrence(s) highlighted in this window</span>'
+                    legend_html += '</div>'
+                    
+                    st.markdown(''.join(html_parts) + legend_html, unsafe_allow_html=True)
+                    
+                else:
+                    st.warning(f"⚠️ No matches found for pattern '{pat}' in the sequence.")
                 
-                html_parts.append('</div>')
-                
-                # Legend
-                legend_html = '<div style="margin-top: 10px; padding: 10px; background-color: #1E2636; border-radius: 8px;">'
-                legend_html += '<strong>Legend:</strong> '
-                for pat, info in pattern_positions.items():
-                    legend_html += f'<span style="background-color: {info["color"]}; padding: 3px 8px; border-radius: 3px; margin: 0 5px; font-weight: bold;">{pat}</span>'
-                legend_html += '</div>'
-                
-                st.markdown(html_parts[0] + ''.join(html_parts[1:]) + legend_html, unsafe_allow_html=True)
-            else:
-                st.info("No pattern matches found in the first 500 bp.")
+                st.markdown("---")
             
             # Chart - Performance comparison
             st.markdown("### 📈 Performance Chart")
